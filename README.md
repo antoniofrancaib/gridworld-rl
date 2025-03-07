@@ -57,8 +57,3 @@ This project explores **Reinforcement Learning (RL)** algorithms applied to vari
    - **`function_approximation.py`**: Showcases how linear or DQN methods can handle a dynamic environment.  
    - **`compare_algorithms.py`**: Runs Value Iteration vs. Policy Iteration.  
    - **`run_cliff_comparison.py`**: Compares SARSA and Q-learning in Cliff World.  
-
-7. **Extensions**  
-   - Add more advanced function approximators (e.g., deeper networks, experience replay).  
-   - Explore different exploration strategies (e.g., Boltzmann exploration).  
-   - Integrate policy gradient methods for continuous action spaces.
