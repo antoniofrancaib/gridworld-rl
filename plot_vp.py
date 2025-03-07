@@ -6,7 +6,7 @@ from model import Actions, Model
 from world_config import Cell
 
 
-def plot_vp(model: Model, value_function: np.array, policy: np.array):
+def plot_vp(model: Model, value_function: np.array, policy: np.array, ax=None):
     """
     Plot value function and policy on grid.
 
@@ -15,6 +15,8 @@ def plot_vp(model: Model, value_function: np.array, policy: np.array):
 
     :param policy: 1D array of size `model.num_states` containing
         an action for each state.
+        
+    :param ax: Optional matplotlib axes to plot on. If None, a new figure is created.
     """
     v = value_function[:-1]  # get rid of final absorbing state
 
@@ -23,9 +25,19 @@ def plot_vp(model: Model, value_function: np.array, policy: np.array):
 
     scale = 1.2
     figsize = (scale * model.world.num_cols, scale * model.world.num_rows)
-    fig, (ax, cax) = plt.subplots(
-        nrows=2, figsize=figsize, gridspec_kw={"height_ratios": [1, 0.05]}
-    )
+    
+    if ax is None:
+        fig, (ax, cax) = plt.subplots(
+            nrows=2, figsize=figsize, gridspec_kw={"height_ratios": [1, 0.05]}
+        )
+    else:
+        fig = ax.figure
+        # Create a new axes for the colorbar below the main axes
+        cax = fig.add_axes([ax.get_position().x0, 
+                          ax.get_position().y0 - 0.05, 
+                          ax.get_position().width, 
+                          0.02])
+    
     cmap = mpl.cm.viridis
     cmap.set_bad("black", 1.0)
     im = ax.matshow(
