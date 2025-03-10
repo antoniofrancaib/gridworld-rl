@@ -3,8 +3,14 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
 
-from model import Model, Actions
-from plot_vp import plot_vp
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from environment.model import Model, Actions
+from utils.plot_vp import plot_vp
 from typing import List, Tuple, Dict, Optional, Callable
 from sarsa import SarsaAgent
 
@@ -657,8 +663,8 @@ def hyperparameter_tuning_q_learning(model: Model):
 
 
 if __name__ == "__main__":
-    from world_config import small_world
-    from model import Model
+    from environment.world_config import small_world
+    from environment.model import Model
     
     # Create model
     model = Model(small_world)

@@ -7,7 +7,7 @@ from world_config import cliff_world
 from model import Model, Actions
 from q_learning import QLearningAgent
 from sarsa import SarsaAgent
-from plot_vp import plot_vp
+from utils.plot_vp import plot_vp
 
 def run_cliff_world_comparison(
     num_episodes=500,

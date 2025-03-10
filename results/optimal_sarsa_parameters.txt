@@ -1,0 +1,9 @@
+===== Optimal SARSA Parameters =====
+Learning rate (α): 0.5
+Exploration rate (ε): 0.01
+Number of episodes: 1000
+Maximum steps: 200
+Average return: -7.50
+
+These parameters were determined by a grid search over 81 combinations of hyperparameters.
+They were automatically applied to all subsequent SARSA and Expected SARSA experiments.

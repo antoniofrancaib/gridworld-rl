@@ -1,0 +1,56 @@
+===== SARSA vs Expected SARSA Summary =====
+SARSA training time: 0.66s
+Expected SARSA training time: 0.66s
+Time difference: 0.00s (Expected SARSA was faster)
+SARSA average return (last 100 episodes): -7.98
+Expected SARSA average return (last 100 episodes): -7.61
+Return difference: 0.37 (Expected SARSA was better)
+Policy differences: 0 states (0.00%)
+
+
+===== SARSA Hyperparameter Tuning Results =====
+Best parameter combination:
+  α=0.5
+  ε=0.01
+  Episodes=500
+  Max steps=50
+  Return=-7.26
+
+
+===== SARSA vs. Expected SARSA (Fixed Hyperparams) =====
+alpha=0.1, epsilon=0.1, episodes=500, steps=200
+SARSA training time: 0.47 s
+Expected SARSA training time: 0.47 s
+
+
+===== SARSA vs. Expected SARSA (Fixed Hyperparams) =====
+alpha=0.1, epsilon=0.1, episodes=500, steps=200
+SARSA training time: 0.48 s
+Expected SARSA training time: 0.47 s
+
+
+===== SARSA vs. Expected SARSA (Fixed Hyperparams) =====
+alpha=0.1, epsilon=0.1, episodes=500, steps=200
+SARSA training time: 0.47 s
+Expected SARSA training time: 0.48 s
+
+
+===== SARSA Hyperparameter Tuning Results =====
+Best parameter combination:
+  Learning rate (α): 0.5
+  Exploration rate (ε): 0.01
+  Number of episodes: 100
+  Maximum steps: 200
+  Average return: -7.25
+
+
+===== SARSA vs. Expected SARSA (Fixed Hyperparams) =====
+alpha=0.1, epsilon=0.1, episodes=500, steps=200
+SARSA training time: 0.49 s
+Expected SARSA training time: 0.48 s
+
+
+===== SARSA vs. Expected SARSA (Fixed Hyperparams) =====
+alpha=0.1, epsilon=0.1, episodes=500, steps=200
+SARSA training time: 0.48 s
+Expected SARSA training time: 0.46 s

@@ -1,6 +1,11 @@
 # Python code by V Dutordoir (2022). Oringal matlab code from C E Rasmussen,
 # who adapted it from earlier work by F Doshi and M P Deisenroth
 import numpy as np
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 from typing import List, TypeVar
@@ -8,7 +13,7 @@ from collections import defaultdict
 from enum import IntEnum
 
 
-from world_config import WorldConfig, Cell
+from environment.world_config import WorldConfig, Cell
 
 
 State = TypeVar("State", bound=int)

@@ -1,16 +1,25 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Make tabulate optional with clean fallback
 try:
     from tabulate import tabulate
 except ImportError:
     tabulate = None
 
-from model import Model, Actions
-from world_config import small_world, grid_world, cliff_world
-from policy_iteration import policy_iteration
-from value_iteration import synchronous_value_iteration, asynchronous_value_iteration
+# Import from utils package according to new directory structure
+from utils.plot_vp import plot_vp
+    
+from environment.model import Model, Actions
+from environment.world_config import small_world, grid_world, cliff_world
+from algorithms.policy_iteration import policy_iteration
+from algorithms.value_iteration import synchronous_value_iteration, asynchronous_value_iteration
 
 
 def count_operations(model, algorithm, **kwargs):
@@ -36,8 +45,22 @@ def count_operations(model, algorithm, **kwargs):
         operations['bellman_updates'] += 1
         return operations['bellman_updates']
     
-    # Store the algorithm's iteration counter if needed
-    if 'max_iterations' in kwargs:
+    # Fix for policy iteration which uses 'maxit' instead of 'max_iterations'
+    if 'maxit' in kwargs and algorithm.__name__ == 'policy_iteration':
+        # Make a copy of the original max iterations
+        orig_max_it = kwargs['maxit']
+        
+        # Create a wrapper for the iteration monitor
+        def policy_iteration_monitor(i):
+            # Update the iteration count - add 1 because i is 0-indexed
+            operations['iterations'] = i + 1
+            return True  # Always continue until policy_iteration's own convergence check
+            
+        # Add our monitor to kwargs
+        kwargs['iteration_monitor'] = policy_iteration_monitor
+        
+    # Handle the standard max_iterations parameter for value iteration
+    elif 'max_iterations' in kwargs:
         orig_max_it = kwargs['max_iterations']
         def iteration_monitor(i):
             operations['iterations'] = i + 1  # +1 because iterations are 0-indexed
@@ -49,6 +72,10 @@ def count_operations(model, algorithm, **kwargs):
         def bellman_update_monitor():
             operations['bellman_updates'] += 1
         kwargs['bellman_update_monitor'] = bellman_update_monitor
+    elif algorithm.__name__ == 'policy_iteration':
+        def policy_update_monitor():
+            operations['policy_evaluations'] += 1
+        kwargs['policy_evaluation_monitor'] = policy_update_monitor
     
     # Run algorithm
     start_time = time.time()
@@ -58,11 +85,23 @@ def count_operations(model, algorithm, **kwargs):
     # Calculate total Bellman updates if not already tracked
     if operations['bellman_updates'] == 0:
         if algorithm.__name__ == 'policy_iteration':
-            # For policy iteration, count policy evaluations
-            operations['policy_evaluations'] = operations['iterations'] * 5  # 5 evaluations per iteration
-            operations['bellman_updates'] = operations['policy_evaluations'] * len(model.states)
+            # For policy iteration:
+            # 1. Each iteration involves a full policy evaluation
+            # 2. Each policy evaluation requires multiple sweeps through the state space 
+            #    until convergence (typically 10-20 sweeps)
+            # 3. Each sweep updates each state once
+            if operations['policy_evaluations'] > 0:
+                # If we tracked policy evaluations, use that
+                # Assume ~15 sweeps per policy evaluation on average
+                operations['bellman_updates'] = operations['policy_evaluations'] * len(model.states) * 15
+            else:
+                # Each iteration of policy iteration performs one policy evaluation
+                # Estimate ~15 sweeps per evaluation
+                operations['policy_evaluations'] = operations['iterations']
+                operations['bellman_updates'] = operations['iterations'] * len(model.states) * 15
         else:
-            # For value iteration, each state update is a Bellman update
+            # For both sync and async value iteration:
+            # Each iteration involves exactly one update per state
             operations['bellman_updates'] = operations['iterations'] * len(model.states)
     
     return V, pi, operations, execution_time
@@ -130,10 +169,29 @@ def calculate_theoretical_complexity(model):
 
 
 def prepare_value_func_for_plot(V):
-    """Prepare value function for plotting by replacing -inf with a large negative number."""
+    """
+    Prepare value function for plotting by replacing -inf with a large negative number.
+    Works with both NumPy arrays and dictionaries.
+    
+    Args:
+        V: Value function (either NumPy array or dictionary mapping states to values)
+        
+    Returns:
+        Processed copy of V suitable for visualization
+    """
+    # Make a copy to avoid modifying the original
     V_copy = V.copy()
-    # Replace -inf with a large negative number for visualization
-    V_copy[np.isneginf(V_copy)] = -1000
+    
+    # Handle NumPy arrays
+    if isinstance(V_copy, np.ndarray):
+        # Replace -inf values with a large negative number
+        V_copy[np.isneginf(V_copy)] = -1000
+    # Handle dictionaries
+    elif isinstance(V_copy, dict):
+        for state, value in V_copy.items():
+            if np.isneginf(value):
+                V_copy[state] = -1000
+    
     return V_copy
 
 
@@ -154,11 +212,11 @@ def explain_policy_differences(model, policies, names, world_name):
             diff = analyze_policy_differences(model, policies[name1], policies[name2], name1, name2)
             differences[f"{name1} vs {name2}"] = diff
     
-    print("\n===== Policy Difference Analysis =====")
+    print(f"\n===== Policy Difference Analysis for {world_name} =====")
     
     if all(diff['count'] == 0 for diff in differences.values()):
-        print(f"✓ All policies for {world_name} are identical.")
-        return
+        print(f"✓ All policies for {world_name} are identical - all algorithms converged to the same optimal policy.")
+        return differences
     
     # Summarize differences in a table
     print(f"Policy differences in {world_name}:")
@@ -171,15 +229,15 @@ def explain_policy_differences(model, policies, names, world_name):
             f"{diff['percentage']:.2f}%"
         ])
     
-    headers = ["Comparison", "Different States", "Percentage"]
+    headers = ["Algorithm Comparison", "Different States", "Percentage of States"]
     
     if tabulate:
         print(tabulate(table_data, headers=headers, tablefmt="grid"))
     else:
-        print(f"{headers[0]:<20} {headers[1]:<20} {headers[2]:<15}")
-        print("-" * 55)
+        print(f"{headers[0]:<30} {headers[1]:<20} {headers[2]:<20}")
+        print("-" * 72)
         for row in table_data:
-            print(f"{row[0]:<20} {row[1]:<20} {row[2]:<15}")
+            print(f"{row[0]:<30} {row[1]:<20} {row[2]:<20}")
     
     # Show examples of differences
     for comparison, diff in differences.items():
@@ -188,8 +246,8 @@ def explain_policy_differences(model, policies, names, world_name):
             for i, state_diff in enumerate(diff['different_states'][:3]):  # Show up to 3 examples
                 state = state_diff['state']
                 cell = state_diff['cell']
-                action1 = state_diff[f"{names[0]}_action"] if f"{names[0]}_action" in state_diff else state_diff[f"{comparison.split(' vs ')[0]}_action"]
-                action2 = state_diff[f"{names[1]}_action"] if f"{names[1]}_action" in state_diff else state_diff[f"{comparison.split(' vs ')[1]}_action"]
+                action1 = state_diff[f"{comparison.split(' vs ')[0]}_action"]
+                action2 = state_diff[f"{comparison.split(' vs ')[1]}_action"]
                 
                 # Determine if the cell is near a special location
                 near_special = ""
@@ -201,8 +259,8 @@ def explain_policy_differences(model, policies, names, world_name):
                     near_special = "(BAD CELL)"
                 
                 print(f"  State {state} {near_special} at Cell{cell}:")
-                print(f"    → {comparison.split(' vs ')[0]} action: {action1}")
-                print(f"    → {comparison.split(' vs ')[1]} action: {action2}")
+                print(f"    → {comparison.split(' vs ')[0]} chooses: {action1}")
+                print(f"    → {comparison.split(' vs ')[1]} chooses: {action2}")
     
     # Provide explanation for differences
     print("\nExplanation for Policy Differences:")
@@ -228,6 +286,8 @@ def explain_policy_differences(model, policies, names, world_name):
         print("   1. Risk-avoidance vs optimal-path tradeoffs near the cliff")
         print("   2. The return-to-start penalty creates multiple strategies with")
         print("      similar expected returns")
+        print("   3. Different algorithms may take different approaches to navigating")
+        print("      the risk-reward tradeoff between shortest path and avoiding the cliff")
     
     # Theoretically, both algorithms should converge to the same optimal policy
     print("\nTheoretical Note: Both Value Iteration and Policy Iteration should converge")
@@ -235,51 +295,82 @@ def explain_policy_differences(model, policies, names, world_name):
     print(" - Different convergence thresholds")
     print(" - Finite iteration counts")
     print(" - Numerical precision issues")
-    print(" - Existence of multiple optimal policies")
+    print(" - Existence of multiple optimal policies with identical values")
+    
+    return differences
 
 
 def run_comparison(world_name, world_config, max_iterations=100, epsilon=1e-6):
-    """Run comparison between policy iteration and both value iteration variants"""
+    """
+    Run comparison between policy iteration and both value iteration variants.
+    
+    Args:
+        world_name: Name of the world configuration
+        world_config: World configuration dictionary
+        max_iterations: Maximum iterations for algorithms
+        epsilon: Convergence threshold for value iteration
+        
+    Returns:
+        Dictionary with results from all algorithms
+    """
     model = Model(world_config)
     
     results = {}
     
+    # Create a results directory if it doesn't exist
+    os.makedirs('results', exist_ok=True)
+    
     # Run policy iteration
     print(f"\nRunning Policy Iteration on {world_name}...")
-    V_pi, pi_pi, ops_pi, time_pi = count_operations(model, policy_iteration, maxit=max_iterations)
-    results['Policy Iteration'] = {
-        'value_function': V_pi,
-        'policy': pi_pi,
-        'operations': ops_pi,
-        'time': time_pi
-    }
+    try:
+        V_pi, pi_pi, ops_pi, time_pi = count_operations(model, policy_iteration, maxit=max_iterations)
+        results['Policy Iteration'] = {
+            'value_function': V_pi,
+            'policy': pi_pi,
+            'operations': ops_pi,
+            'time': time_pi
+        }
+        print(f"  ✓ Completed in {ops_pi['iterations']} iterations and {time_pi:.4f} seconds")
+    except Exception as e:
+        print(f"  ✗ Error during Policy Iteration: {e}")
+        return None
     
     # Run synchronous value iteration
     print(f"Running Synchronous Value Iteration on {world_name}...")
-    V_sync, pi_sync, ops_sync, time_sync = count_operations(
-        model, synchronous_value_iteration, max_iterations=max_iterations, epsilon=epsilon
-    )
-    results['Synchronous VI'] = {
-        'value_function': V_sync,
-        'policy': pi_sync,
-        'operations': ops_sync,
-        'time': time_sync
-    }
+    try:
+        V_sync, pi_sync, ops_sync, time_sync = count_operations(
+            model, synchronous_value_iteration, max_iterations=max_iterations, epsilon=epsilon
+        )
+        results['Synchronous VI'] = {
+            'value_function': V_sync,
+            'policy': pi_sync,
+            'operations': ops_sync,
+            'time': time_sync
+        }
+        print(f"  ✓ Completed in {ops_sync['iterations']} iterations and {time_sync:.4f} seconds")
+    except Exception as e:
+        print(f"  ✗ Error during Synchronous Value Iteration: {e}")
+        return None
     
     # Run asynchronous value iteration
     print(f"Running Asynchronous Value Iteration on {world_name}...")
-    V_async, pi_async, ops_async, time_async = count_operations(
-        model, asynchronous_value_iteration, max_iterations=max_iterations, epsilon=epsilon
-    )
-    results['Asynchronous VI'] = {
-        'value_function': V_async,
-        'policy': pi_async,
-        'operations': ops_async,
-        'time': time_async
-    }
+    try:
+        V_async, pi_async, ops_async, time_async = count_operations(
+            model, asynchronous_value_iteration, max_iterations=max_iterations, epsilon=epsilon
+        )
+        results['Asynchronous VI'] = {
+            'value_function': V_async,
+            'policy': pi_async,
+            'operations': ops_async,
+            'time': time_async
+        }
+        print(f"  ✓ Completed in {ops_async['iterations']} iterations and {time_async:.4f} seconds")
+    except Exception as e:
+        print(f"  ✗ Error during Asynchronous Value Iteration: {e}")
+        return None
     
     # Print comparison results
-    print(f"\n--- {world_name} Comparison Results ---")
+    print(f"\n===== {world_name} Comparison Results =====")
     
     # Policy match checking
     policies = {
@@ -319,7 +410,22 @@ def run_comparison(world_name, world_config, max_iterations=100, epsilon=1e-6):
             print(f"    {metric}: {value}")
     
     # Analyze policy differences
-    explain_policy_differences(model, policies, alg_names, world_name)
+    policy_diff = explain_policy_differences(model, policies, alg_names, world_name)
+    
+    # Save summarized results
+    with open(f"results/{world_name.replace(' ', '_').lower()}_summary.txt", 'w') as f:
+        f.write(f"===== {world_name} Algorithm Comparison =====\n\n")
+        f.write("Performance Metrics:\n")
+        for name, data in results.items():
+            f.write(f"{name}:\n")
+            f.write(f"  - Iterations: {data['operations']['iterations']}\n")
+            f.write(f"  - Bellman Updates: {data['operations']['bellman_updates']}\n")
+            f.write(f"  - Execution Time: {data['time']:.4f}s\n\n")
+        
+        if policy_diff:
+            f.write("Policy Differences:\n")
+            for comparison, diff in policy_diff.items():
+                f.write(f"{comparison}: {diff['count']} states differ ({diff['percentage']:.2f}%)\n")
     
     return results
 
@@ -384,33 +490,41 @@ if __name__ == "__main__":
     for world_name, world_config in worlds.items():
         model = Model(world_config)
         
-        # Create multi-panel figure
-        fig = plt.figure(figsize=(18, 10))
+        # Create multi-panel figure with explicit figure number to prevent extra plots
+        plt.figure(figsize=(18, 10), clear=True)
+        fig = plt.gcf()
         fig.suptitle(f"Reinforcement Learning Algorithm Comparison: {world_name}", fontsize=18)
         
         # Set up the grid layout for the figure
-        gs = plt.GridSpec(2, 3, figure=fig, wspace=0.3, hspace=0.3)
+        gs = plt.GridSpec(2, 3, figure=fig, wspace=0.3, hspace=0.4)
         
-        # Fix for visualization: prepare value functions for plotting
-        plot_vp = __import__('plot_vp').plot_vp
+        # Clear any existing subplots to prevent extra plots
+        plt.clf()
         
         # Plot policy iteration
         ax1 = fig.add_subplot(gs[0, 0])
         V_pi_plot = prepare_value_func_for_plot(all_results[world_name]["Policy Iteration"]["value_function"])
-        plot_vp(model, V_pi_plot, all_results[world_name]["Policy Iteration"]["policy"])
-        ax1.set_title("Policy Iteration", fontsize=14)
+        plot_vp(model, V_pi_plot, all_results[world_name]["Policy Iteration"]["policy"], ax=ax1, title=f"Policy Iteration\n{world_name}")
+        ax1.set_title("Policy Iteration\nValue Function & Policy", fontsize=14)
+        # Add colorbar explanation
+        # ax1.text(0.5, -0.15, "Colors: Value function (brighter = higher value)", transform=ax1.transAxes, 
+        #        ha='center', fontsize=8, style='italic')
         
         # Plot synchronous VI
         ax2 = fig.add_subplot(gs[0, 1])
         V_sync_plot = prepare_value_func_for_plot(all_results[world_name]["Synchronous VI"]["value_function"])
-        plot_vp(model, V_sync_plot, all_results[world_name]["Synchronous VI"]["policy"])
-        ax2.set_title("Synchronous Value Iteration", fontsize=14)
+        plot_vp(model, V_sync_plot, all_results[world_name]["Synchronous VI"]["policy"], ax=ax2, title=f"Synchronous VI\n{world_name}")
+        ax2.set_title("Synchronous Value Iteration\nValue Function & Policy", fontsize=14)
         
         # Plot asynchronous VI
         ax3 = fig.add_subplot(gs[0, 2])
         V_async_plot = prepare_value_func_for_plot(all_results[world_name]["Asynchronous VI"]["value_function"])
-        plot_vp(model, V_async_plot, all_results[world_name]["Asynchronous VI"]["policy"])
-        ax3.set_title("Asynchronous Value Iteration", fontsize=14)
+        plot_vp(model, V_async_plot, all_results[world_name]["Asynchronous VI"]["policy"], ax=ax3, title=f"Asynchronous VI\n{world_name}")
+        ax3.set_title("Asynchronous Value Iteration\nValue Function & Policy", fontsize=14)
+        
+        # Add legend for policy arrows
+        # ax3.text(0.5, -0.15, "Arrows: Optimal action directions from policy", transform=ax3.transAxes, 
+        #        ha='center', fontsize=8, style='italic')
         
         # Plot iterations comparison
         ax4 = fig.add_subplot(gs[1, 0])
@@ -421,10 +535,12 @@ if __name__ == "__main__":
         bars = ax4.bar(x_pos, iterations, width=0.5, color='#5DA5DA', edgecolor='black')
         add_value_labels(ax4)
         
-        ax4.set_ylabel('Iterations', fontsize=12)
-        ax4.set_title('Iterations to Convergence', fontsize=14)
+        ax4.set_ylabel('Number of Iterations', fontsize=12)
+        ax4.set_title(f'Iterations to Convergence\n({world_name})', fontsize=14)
         ax4.set_xticks(x_pos)
         ax4.set_xticklabels(alg_names, rotation=30, ha='right')
+        ax4.text(0.5, -0.25, "Lower is better - fewer iterations needed", transform=ax4.transAxes, 
+                ha='center', fontsize=8, style='italic')
         
         # Plot Bellman updates comparison
         ax5 = fig.add_subplot(gs[1, 1])
@@ -432,10 +548,12 @@ if __name__ == "__main__":
         bars = ax5.bar(x_pos, updates, width=0.5, color='#F17CB0', edgecolor='black')
         add_value_labels(ax5)
         
-        ax5.set_ylabel('Bellman Updates', fontsize=12)
-        ax5.set_title('Total Bellman Updates', fontsize=14)
+        ax5.set_ylabel('Number of Updates', fontsize=12)
+        ax5.set_title(f'Total Bellman Updates\n({world_name})', fontsize=14)
         ax5.set_xticks(x_pos)
         ax5.set_xticklabels(alg_names, rotation=30, ha='right')
+        ax5.text(0.5, -0.25, "Lower is better - computational efficiency", transform=ax5.transAxes, 
+                ha='center', fontsize=8, style='italic')
         
         # Plot execution time comparison
         ax6 = fig.add_subplot(gs[1, 2])
@@ -444,16 +562,29 @@ if __name__ == "__main__":
         add_value_labels(ax6)
         
         ax6.set_ylabel('Time (seconds)', fontsize=12)
-        ax6.set_title('Execution Time', fontsize=14)
+        ax6.set_title(f'Execution Time\n({world_name})', fontsize=14)
         ax6.set_xticks(x_pos)
         ax6.set_xticklabels(alg_names, rotation=30, ha='right')
+        ax6.text(0.5, -0.25, "Lower is better - wall-clock efficiency", transform=ax6.transAxes, 
+                ha='center', fontsize=8, style='italic')
         
+        # Save the plot
         plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust for main title
+        plt.savefig(f'{world_name.replace(" ", "_").lower()}_comparison.png', dpi=300, bbox_inches='tight')
+
+        # Use a more compatible layout approach that avoids the tight_layout warnings
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.85, bottom=0.15, wspace=0.3)
         plt.savefig(f'{world_name.replace(" ", "_").lower()}_comparison.png', dpi=300, bbox_inches='tight')
     
     # Create a final summary figure
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle('Algorithm Performance Across Environments', fontsize=18)
+    plt.figure(figsize=(18, 6), clear=True)
+    fig = plt.gcf()
+    fig.clf()  # Clear any previous content
+    fig.suptitle('Algorithm Performance Comparison Across All Environments', fontsize=18)
+    # fig.text(0.5, 0.94, "Comparing Policy Iteration, Synchronous Value Iteration, and Asynchronous Value Iteration", 
+    #          ha='center', fontsize=12, style='italic')
+    
+    axes = [plt.subplot(1, 3, i+1) for i in range(3)]
     
     # Set up data for comparison across worlds
     world_names = list(worlds.keys())
@@ -467,10 +598,12 @@ if __name__ == "__main__":
         bars = axes[0].bar(x + (i-1)*width, iterations, width, label=alg)
     
     axes[0].set_ylabel('Iterations', fontsize=12)
-    axes[0].set_title('Iterations to Convergence', fontsize=14)
+    axes[0].set_title('Iterations to Convergence\nAcross Environments', fontsize=14)
     axes[0].set_xticks(x)
     axes[0].set_xticklabels(world_names, rotation=0)
     axes[0].legend(loc='upper left')
+    axes[0].text(0.5, -0.15, "Lower is better", transform=axes[0].transAxes, 
+                ha='center', fontsize=9, style='italic')
     
     # Plot Bellman updates comparison
     for i, alg in enumerate(alg_names):
@@ -478,10 +611,12 @@ if __name__ == "__main__":
         bars = axes[1].bar(x + (i-1)*width, updates, width, label=alg)
     
     axes[1].set_ylabel('Bellman Updates', fontsize=12)
-    axes[1].set_title('Total Bellman Updates', fontsize=14)
+    axes[1].set_title('Total Bellman Updates\nComputational Workload', fontsize=14)
     axes[1].set_xticks(x)
     axes[1].set_xticklabels(world_names, rotation=0)
     axes[1].legend(loc='upper left')
+    axes[1].text(0.5, -0.15, "Lower is better", transform=axes[1].transAxes, 
+                ha='center', fontsize=9, style='italic')
     
     # Plot execution time comparison
     for i, alg in enumerate(alg_names):
@@ -489,51 +624,96 @@ if __name__ == "__main__":
         bars = axes[2].bar(x + (i-1)*width, times, width, label=alg)
     
     axes[2].set_ylabel('Time (seconds)', fontsize=12)
-    axes[2].set_title('Execution Time', fontsize=14)
+    axes[2].set_title('Execution Time\nWall-Clock Performance', fontsize=14)
     axes[2].set_xticks(x)
     axes[2].set_xticklabels(world_names, rotation=0)
     axes[2].legend(loc='upper left')
+    axes[2].text(0.5, -0.15, "Lower is better", transform=axes[2].transAxes, 
+                ha='center', fontsize=9, style='italic')
+
+    # Create a final summary figure
+    plt.figure(figsize=(18, 6), clear=True)
+    fig = plt.gcf()
+    fig.clf()  # Clear any previous content
+    fig.suptitle('Algorithm Performance Comparison Across All Environments', fontsize=18)
+    # fig.text(0.5, 0.94, "Comparing Policy Iteration, Synchronous Value Iteration, and Asynchronous Value Iteration", 
+    #          ha='center', fontsize=12, style='italic')
     
-    plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for main title
+    # Create distinct colors for each algorithm for better visibility
+    colors = ['#3366CC', '#DC3912', '#FF9900']
+    
+    # Create three subplots in a row
+    axes = [plt.subplot(1, 3, i+1) for i in range(3)]
+    
+    # Set up data for comparison across worlds
+    world_names = list(worlds.keys())
+    alg_names = list(all_results[world_names[0]].keys())
+    x = np.arange(len(world_names))
+    width = 0.25
+    
+    # Plot iterations comparison with value labels
+    for i, alg in enumerate(alg_names):
+        iterations = [all_results[world][alg]['operations']['iterations'] for world in world_names]
+        bars = axes[0].bar(x + (i-1)*width, iterations, width, label=alg, color=colors[i])
+        
+        # Add value labels on top of each bar
+        for j, val in enumerate(iterations):
+            axes[0].text(x[j] + (i-1)*width, val + 0.5, f"{val}", 
+                        ha='center', va='bottom', fontsize=8, rotation=0)
+    
+    axes[0].set_ylabel('Number of Iterations', fontsize=12)
+    axes[0].set_title('Iterations to Convergence\nAcross Environments', fontsize=14)
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(world_names, rotation=0)
+    axes[0].legend(loc='upper left', title="Algorithm")
+    axes[0].grid(axis='y', linestyle='--', alpha=0.7)
+    axes[0].text(0.5, -0.15, "Lower is better - fewer iterations needed", transform=axes[0].transAxes, 
+                ha='center', fontsize=9, style='italic')
+    
+    # Plot Bellman updates comparison with value labels
+    for i, alg in enumerate(alg_names):
+        updates = [all_results[world][alg]['operations']['bellman_updates'] for world in world_names]
+        bars = axes[1].bar(x + (i-1)*width, updates, width, label=alg, color=colors[i])
+        
+        # Add value labels on top of each bar
+        for j, val in enumerate(updates):
+            axes[1].text(x[j] + (i-1)*width, val + 5, f"{val}", 
+                        ha='center', va='bottom', fontsize=8, rotation=0)
+    
+    axes[1].set_ylabel('Number of Updates', fontsize=12)
+    axes[1].set_title('Total Bellman Updates\nComputational Workload', fontsize=14)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(world_names, rotation=0)
+    axes[1].legend(loc='upper left', title="Algorithm")
+    axes[1].grid(axis='y', linestyle='--', alpha=0.7)
+    axes[1].text(0.5, -0.15, "Lower is better - fewer computations", transform=axes[1].transAxes, 
+                ha='center', fontsize=9, style='italic')
+    
+    # Plot execution time comparison with value labels
+    for i, alg in enumerate(alg_names):
+        times = [all_results[world][alg]['time'] for world in world_names]
+        bars = axes[2].bar(x + (i-1)*width, times, width, label=alg, color=colors[i])
+        
+        # Add value labels on top of each bar
+        for j, val in enumerate(times):
+            axes[2].text(x[j] + (i-1)*width, val + 0.01, f"{val:.3f}s", 
+                        ha='center', va='bottom', fontsize=8, rotation=0)
+    
+    axes[2].set_ylabel('Time (seconds)', fontsize=12)
+    axes[2].set_title('Execution Time\nWall-Clock Performance', fontsize=14)
+    axes[2].set_xticks(x)
+    axes[2].set_xticklabels(world_names, rotation=0)
+    axes[2].legend(loc='upper left', title="Algorithm")
+    axes[2].grid(axis='y', linestyle='--', alpha=0.7)
+    axes[2].text(0.5, -0.15, "Lower is better - faster runtime", transform=axes[2].transAxes, 
+                ha='center', fontsize=9, style='italic')
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.92])  # Adjust for main title
+    plt.savefig('overall_comparison.png', dpi=300, bbox_inches='tight')
+
+    # Use a more compatible layout approach that avoids the tight_layout warnings
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.85, bottom=0.15, wspace=0.3)
     plt.savefig('overall_comparison.png', dpi=300, bbox_inches='tight')
     
-    # Show all plots
-    plt.show()
-
-    # Print final summary
-    print("\n===== SUMMARY OF RESULTS =====")
-    print("1. Stopping Criteria for Value Iteration:")
-    print("   - Both Sync and Async VI use max|V(s) - V'(s)| < ε = 1e-6 as convergence criteria")
-    print("   - This ensures the value function has stabilized to near-optimal values")
-    print("   - Provides a principled way to terminate the algorithm with theoretical guarantees")
-    
-    print("\n2. Synchronous vs Asynchronous Value Iteration:")
-    for world in world_names:
-        sync_iter = all_results[world]['Synchronous VI']['operations']['iterations']
-        async_iter = all_results[world]['Asynchronous VI']['operations']['iterations']
-        sync_time = all_results[world]['Synchronous VI']['time']
-        async_time = all_results[world]['Asynchronous VI']['time']
-        
-        print(f"   {world}:")
-        print(f"     - Sync VI: {sync_iter} iterations, {sync_time:.4f}s")
-        print(f"     - Async VI: {async_iter} iterations, {async_time:.4f}s")
-        print(f"     - {'Async' if async_iter < sync_iter else 'Sync'} VI required fewer iterations")
-        print(f"     - {'Async' if async_time < sync_time else 'Sync'} VI was faster")
-    
-    print("\n3. Policy Iteration vs Value Iteration:")
-    for world in world_names:
-        pi_iter = all_results[world]['Policy Iteration']['operations']['iterations']
-        pi_time = all_results[world]['Policy Iteration']['time']
-        vi_time = all_results[world]['Synchronous VI']['time']
-        
-        print(f"   {world}:")
-        print(f"     - PI required {pi_iter} iterations")
-        print(f"     - PI was {'faster' if pi_time < vi_time else 'slower'} than Sync VI")
-        
-    print("\n4. Computational Complexity Analysis:")
-    print("   - Policy Iteration: O(|S|³ + |S|²|A|·iterations)")
-    print("     * Requires fewer iterations but each iteration is more expensive")
-    print("   - Value Iteration: O(|S|²|A|·iterations)")
-    print("     * Requires more iterations but each iteration is less expensive")
-    print("   - Asynchronous VI is generally more efficient in practice as it")
-    print("     incorporates new information immediately") 
+    # Prevent showing extra plots
+    plt.close('all') 

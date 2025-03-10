@@ -1,0 +1,22 @@
+===== Small World Algorithm Comparison =====
+
+Performance Metrics:
+Policy Iteration:
+  - Iterations: 5
+  - Bellman Updates: 1020
+  - Execution Time: 0.3688s
+
+Synchronous VI:
+  - Iterations: 26
+  - Bellman Updates: 442
+  - Execution Time: 0.1062s
+
+Asynchronous VI:
+  - Iterations: 22
+  - Bellman Updates: 374
+  - Execution Time: 0.0791s
+
+Policy Differences:
+Policy Iteration vs Synchronous VI: 2 states differ (12.50%)
+Policy Iteration vs Asynchronous VI: 0 states differ (0.00%)
+Synchronous VI vs Asynchronous VI: 2 states differ (12.50%)

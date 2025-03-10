@@ -1,0 +1,6 @@
+numpy>=1.19.0
+matplotlib>=3.3.0
+tabulate
+tqdm>=4.47.0
+seaborn>=0.11.0
+# Add any other dependencies your project requires 

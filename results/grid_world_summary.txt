@@ -1,0 +1,22 @@
+===== Grid World Algorithm Comparison =====
+
+Performance Metrics:
+Policy Iteration:
+  - Iterations: 7
+  - Bellman Updates: 9810
+  - Execution Time: 33.5530s
+
+Synchronous VI:
+  - Iterations: 65
+  - Bellman Updates: 7085
+  - Execution Time: 12.2618s
+
+Asynchronous VI:
+  - Iterations: 41
+  - Bellman Updates: 4469
+  - Execution Time: 7.9365s
+
+Policy Differences:
+Policy Iteration vs Synchronous VI: 0 states differ (0.00%)
+Policy Iteration vs Asynchronous VI: 0 states differ (0.00%)
+Synchronous VI vs Asynchronous VI: 0 states differ (0.00%)

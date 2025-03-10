@@ -1,7 +1,14 @@
 import matplotlib.pyplot as plt
-from world_config import small_world
-from model import Model
-from q_learning import run_q_learning_vs_sarsa_comparison, hyperparameter_tuning_q_learning
+
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from environment.world_config import small_world
+from environment.model import Model
+from algorithms.q_learning import run_q_learning_vs_sarsa_comparison, hyperparameter_tuning_q_learning
 
 if __name__ == "__main__":
     # Create model using small_world configuration

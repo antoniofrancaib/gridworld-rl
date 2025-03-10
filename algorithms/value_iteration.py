@@ -2,7 +2,13 @@ from typing import Callable
 import numpy as np
 from tqdm import tqdm
 
-from model import Model, Actions
+import os
+import sys
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from environment.model import Model, Actions
 
 
 def synchronous_value_iteration(model: Model, max_iterations: int = 100, epsilon: float = 1e-6, 
@@ -146,7 +152,7 @@ def asynchronous_value_iteration(model: Model, max_iterations: int = 100, epsilo
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from world_config import cliff_world, small_world, grid_world
-    from plot_vp import plot_vp
+    from utils.plot_vp import plot_vp
 
     # Create model using one of the provided world configurations
     model = Model(small_world)  # Try small_world to see policy differences
@@ -187,7 +193,7 @@ if __name__ == "__main__":
     plt.show()
     
     # Now compare with policy iteration
-    from policy_iteration import policy_iteration
+    from algorithms.policy_iteration import policy_iteration
     
     print("\nRunning policy iteration...")
     V_pi, pi_pi = policy_iteration(model)

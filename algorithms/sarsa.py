@@ -3,8 +3,16 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
 
-from model import Model, Actions
-from plot_vp import plot_vp
+import os
+import sys
+import seaborn as sns
+from matplotlib.gridspec import GridSpecFromSubplotSpec
+
+# Add the parent directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from environment.model import Model, Actions
+from utils.plot_vp import plot_vp
 from typing import List, Tuple, Dict, Optional, Callable
 
 
@@ -376,6 +384,135 @@ class SarsaAgent:
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         return fig
 
+    def plot_steps_per_episode(self):
+        """
+        Create a dedicated plot for steps per episode to track agent efficiency.
+        """
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.episode_lengths)
+        plt.xlabel('Episode')
+        plt.ylabel('Steps')
+        plt.title('Steps per Episode')
+        
+        # Add smoothed line for trend visualization
+        window_size = min(50, len(self.episode_lengths))
+        if window_size > 0:
+            smoothed_steps = np.convolve(
+                self.episode_lengths, 
+                np.ones(window_size) / window_size, 
+                mode='valid'
+            )
+            plt.plot(range(window_size-1, len(self.episode_lengths)), 
+                     smoothed_steps, 
+                     'r-', 
+                     linewidth=2, 
+                     label=f'Moving Average (window={window_size})')
+            
+        # Add horizontal line at mean of last 50 episodes
+        if len(self.episode_lengths) >= 50:
+            mean_last_50 = np.mean(self.episode_lengths[-50:])
+            plt.axhline(y=mean_last_50, color='g', linestyle='--', 
+                        label=f'Mean of last 50 episodes: {mean_last_50:.1f}')
+        
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        return plt.gcf()
+    
+    def plot_q_value_heatmaps(self):
+        """
+        Create heatmap visualizations of Q-values for each action.
+        
+        This shows how the agent values each action across different states in the grid.
+        """
+        # Get grid dimensions from the model
+        # The model doesn't expose world_config directly, so we need to infer dimensions
+        
+        # First find all valid cells to determine grid dimensions
+        all_cells = set()
+        for s in range(self.model.num_states):
+            if s != self.model.fictional_end_state:  # Skip fictional end state
+                # Get the cell coordinates for this state
+                cell = self.model.state2cell(s)
+                all_cells.add(cell)
+        
+        # Determine grid dimensions from the valid cells
+        if not all_cells:
+            print("Warning: No valid cells found in the model.")
+            return None
+            
+        # Find max row and column
+        max_row = max(cell[0] for cell in all_cells)
+        max_col = max(cell[1] for cell in all_cells)
+        
+        num_rows = max_row + 1  # +1 because 0-indexed
+        num_cols = max_col + 1  # +1 because 0-indexed
+        num_actions = len(Actions)
+        
+        # Create a figure with subplots for each action
+        fig, axes = plt.subplots(1, num_actions, figsize=(5*num_actions, 4))
+        fig.suptitle("Q-value Heatmaps by Action", fontsize=16)
+        
+        # Define action names for subplot titles
+        action_names = {
+            Actions.UP: "Up",
+            Actions.RIGHT: "Right",
+            Actions.DOWN: "Down",
+            Actions.LEFT: "Left"
+        }
+        
+        # For each action, create a heatmap
+        for a in range(num_actions):
+            # Extract Q-values for this action and reshape to grid
+            q_values = np.zeros((num_rows, num_cols))
+            q_values.fill(np.nan)  # Fill with NaN for cells that aren't states
+            
+            # Fill in the Q-values for valid states
+            for s in range(self.model.num_states):
+                if s != self.model.fictional_end_state:  # Skip fictional end state
+                    # Convert state index to grid coordinates
+                    row, col = self.model.state2cell(s)
+                    q_values[row, col] = self.Q[s, a]
+            
+            # Create mask for cells that aren't valid states
+            mask = np.ones_like(q_values, dtype=bool)
+            for s in range(self.model.num_states):
+                if s != self.model.fictional_end_state:
+                    row, col = self.model.state2cell(s)
+                    mask[row, col] = False
+            
+            # Plot the heatmap
+            ax = axes[a]
+            cmap = plt.cm.RdYlGn  # Red-Yellow-Green colormap
+            im = sns.heatmap(q_values, 
+                      mask=mask,
+                      ax=ax, 
+                      cmap=cmap,
+                      vmin=np.nanmin(q_values),
+                      vmax=np.nanmax(q_values),
+                      annot=True, 
+                      fmt=".2f", 
+                      cbar=True,
+                      cbar_kws={'label': 'Q-value'})
+            
+            # Mark special cells
+            start_row, start_col = self.model.state2cell(self.model.start_state)
+            goal_row, goal_col = self.model.state2cell(self.model.goal_state)
+            
+            # Draw rectangles around special cells
+            ax.add_patch(plt.Rectangle((start_col, start_row), 1, 1, fill=False, 
+                                     edgecolor='blue', linewidth=3, label='Start'))
+            ax.add_patch(plt.Rectangle((goal_col, goal_row), 1, 1, fill=False, 
+                                     edgecolor='green', linewidth=3, label='Goal'))
+            
+            # Set title and labels
+            ax.set_title(f"Action: {action_names[Actions(a)]}")
+            ax.set_xlabel("Column")
+            ax.set_ylabel("Row")
+            
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        return fig
+
 
 def run_sarsa_comparison(
     model: Model, 
@@ -439,6 +576,16 @@ def run_sarsa_comparison(
     plt.title("SARSA Learning Progress")
     plt.savefig("sarsa_learning.png")
     
+    # Plot steps per episode
+    sarsa_agent.plot_steps_per_episode()
+    plt.title("SARSA Steps per Episode")
+    plt.savefig("sarsa_steps_per_episode.png")
+    
+    # Plot Q-value heatmaps
+    sarsa_agent.plot_q_value_heatmaps()
+    plt.title("SARSA Q-value Heatmaps")
+    plt.savefig("sarsa_q_heatmaps.png")
+    
     if use_expected_sarsa:
         # Create Expected SARSA agent
         expected_sarsa_agent = SarsaAgent(
@@ -471,6 +618,16 @@ def run_sarsa_comparison(
         expected_sarsa_agent.visualize_learning()
         plt.title("Expected SARSA Learning Progress")
         plt.savefig("expected_sarsa_learning.png")
+        
+        # Plot steps per episode for Expected SARSA
+        expected_sarsa_agent.plot_steps_per_episode()
+        plt.title("Expected SARSA Steps per Episode")
+        plt.savefig("expected_sarsa_steps_per_episode.png")
+        
+        # Plot Q-value heatmaps for Expected SARSA
+        expected_sarsa_agent.plot_q_value_heatmaps()
+        plt.title("Expected SARSA Q-value Heatmaps")
+        plt.savefig("expected_sarsa_q_heatmaps.png")
         
         # Compare learning curves
         plt.figure(figsize=(12, 8))
@@ -508,9 +665,18 @@ def run_sarsa_comparison(
         plt.tight_layout()
         plt.savefig("sarsa_comparison.png")
     
-    # Compare policies and value functions
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    fig.suptitle("SARSA vs Expected SARSA - Final Policies and Value Functions", fontsize=16)
+    # Create results directory if it doesn't exist
+    results_dir = "/Users/marinafranca/Desktop/gridworld-rl/results"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Compare policies and value functions - only showing heatmaps now
+    if use_expected_sarsa:
+        fig, axes = plt.subplots(1, 2, figsize=(15, 7))
+        fig.suptitle("SARSA vs Expected SARSA - Final Policies and Value Functions", fontsize=16)
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(8, 7))
+        fig.suptitle("SARSA - Final Policy and Value Function", fontsize=16)
+        axes = [axes]  # Make it a list for consistent indexing
     
     # Prepare value functions for plotting
     def prepare_value_func_for_plot(V):
@@ -522,148 +688,215 @@ def run_sarsa_comparison(
     sarsa_policy_enum = np.array([Actions(a) for a in sarsa_policy])
     
     # Plot SARSA policy and value function
-    plot_vp(model, prepare_value_func_for_plot(sarsa_V), sarsa_policy_enum, ax=axes[0, 0])
-    axes[0, 0].set_title("SARSA: Value Function & Policy")
+    plot_vp(model, prepare_value_func_for_plot(sarsa_V), sarsa_policy_enum, ax=axes[0])
+    axes[0].set_title("SARSA: Value Function & Policy")
     
-    if use_expected_sarsa:
-        # Convert Expected SARSA policy from indices to Actions enum
-        expected_sarsa_policy_enum = np.array([Actions(a) for a in expected_sarsa_policy])
+    # Save textual results to a file instead of plotting them
+    results_file = os.path.join(results_dir, "sarsa_comparison_results.txt")
+    with open(results_file, 'w') as f:
+        f.write("===== SARSA vs Expected SARSA Summary =====\n")
+        f.write(f"SARSA training time: {sarsa_stats['training_time']:.2f}s\n")
         
-        # Plot Expected SARSA policy and value function
-        plot_vp(model, prepare_value_func_for_plot(expected_sarsa_V), expected_sarsa_policy_enum, ax=axes[0, 1])
-        axes[0, 1].set_title("Expected SARSA: Value Function & Policy")
-        
-        # Policy difference
-        policy_diff = np.sum(sarsa_policy != expected_sarsa_policy)
-        axes[1, 0].text(0.5, 0.5, f"Policy differences: {policy_diff} states", 
-                        horizontalalignment='center', verticalalignment='center',
-                        fontsize=14)
-        axes[1, 0].axis('off')
-        
-        # Performance comparison
-        sarsa_time = sarsa_stats['training_time']
-        expected_time = expected_sarsa_stats['training_time']
-        sarsa_avg_return = np.mean(sarsa_stats['episode_returns'][-100:])
-        expected_avg_return = np.mean(expected_sarsa_stats['episode_returns'][-100:])
-        
-        comparison_text = (
-            f"Performance Comparison:\n\n"
-            f"SARSA:\n"
-            f"  Training time: {sarsa_time:.2f}s\n"
-            f"  Avg return (last 100 episodes): {sarsa_avg_return:.2f}\n\n"
-            f"Expected SARSA:\n"
-            f"  Training time: {expected_time:.2f}s\n"
-            f"  Avg return (last 100 episodes): {expected_avg_return:.2f}\n\n"
-            f"{'Expected SARSA' if expected_avg_return > sarsa_avg_return else 'SARSA'} "
-            f"achieved better performance.\n"
-            f"{'Expected SARSA' if expected_time < sarsa_time else 'SARSA'} "
-            f"was faster to train."
-        )
-        
-        axes[1, 1].text(0.5, 0.5, comparison_text, 
-                        horizontalalignment='center', verticalalignment='center',
-                        fontsize=12)
-        axes[1, 1].axis('off')
+        if use_expected_sarsa:
+            # Convert Expected SARSA policy from indices to Actions enum
+            expected_sarsa_policy_enum = np.array([Actions(a) for a in expected_sarsa_policy])
+            
+            # Plot Expected SARSA policy and value function
+            plot_vp(model, prepare_value_func_for_plot(expected_sarsa_V), expected_sarsa_policy_enum, ax=axes[1])
+            axes[1].set_title("Expected SARSA: Value Function & Policy")
+            
+            # Add Expected SARSA results to file
+            f.write(f"Expected SARSA training time: {expected_sarsa_stats['training_time']:.2f}s\n")
+            f.write(f"Time difference: {abs(sarsa_stats['training_time'] - expected_sarsa_stats['training_time']):.2f}s "
+                  f"({'Expected SARSA' if expected_sarsa_stats['training_time'] < sarsa_stats['training_time'] else 'SARSA'} was faster)\n")
+            
+            sarsa_avg_return = np.mean(sarsa_stats['episode_returns'][-100:])
+            expected_avg_return = np.mean(expected_sarsa_stats['episode_returns'][-100:])
+            f.write(f"SARSA average return (last 100 episodes): {sarsa_avg_return:.2f}\n")
+            f.write(f"Expected SARSA average return (last 100 episodes): {expected_avg_return:.2f}\n")
+            f.write(f"Return difference: {abs(sarsa_avg_return - expected_avg_return):.2f} "
+                  f"({'Expected SARSA' if expected_avg_return > sarsa_avg_return else 'SARSA'} was better)\n")
+            
+            policy_diff = np.sum(sarsa_policy != expected_sarsa_policy)
+            policy_diff_pct = policy_diff / len(sarsa_policy) * 100
+            f.write(f"Policy differences: {policy_diff} states ({policy_diff_pct:.2f}%)\n")
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig("sarsa_final_policies.png")
     
-    # Print final summary
-    print("\n===== SARSA vs Expected SARSA Summary =====")
-    print(f"SARSA training time: {sarsa_stats['training_time']:.2f}s")
-    if use_expected_sarsa:
-        print(f"Expected SARSA training time: {expected_sarsa_stats['training_time']:.2f}s")
-        print(f"Time difference: {abs(sarsa_stats['training_time'] - expected_sarsa_stats['training_time']):.2f}s "
-              f"({'Expected SARSA' if expected_sarsa_stats['training_time'] < sarsa_stats['training_time'] else 'SARSA'} was faster)")
-        
-        sarsa_avg_return = np.mean(sarsa_stats['episode_returns'][-100:])
-        expected_avg_return = np.mean(expected_sarsa_stats['episode_returns'][-100:])
-        print(f"SARSA average return (last 100 episodes): {sarsa_avg_return:.2f}")
-        print(f"Expected SARSA average return (last 100 episodes): {expected_avg_return:.2f}")
-        print(f"Return difference: {abs(sarsa_avg_return - expected_avg_return):.2f} "
-              f"({'Expected SARSA' if expected_avg_return > sarsa_avg_return else 'SARSA'} was better)")
-        
-        policy_diff = np.sum(sarsa_policy != expected_sarsa_policy)
-        policy_diff_pct = policy_diff / len(sarsa_policy) * 100
-        print(f"Policy differences: {policy_diff} states ({policy_diff_pct:.2f}%)")
+    # Print a message about where results are saved
+    print(f"\nDetailed comparison results saved to: {results_file}")
     
     return results
 
 
 def hyperparameter_tuning_demo(model: Model):
     """
-    Demonstrate the effect of different hyperparameters on SARSA learning.
+    Demonstrate the effect of different hyperparameters on SARSA learning using heatmaps.
+    
+    Creates a 3×3 grid of heatmaps, each showing final average returns for different
+    combinations of alpha and epsilon, for a specific (num_episodes, max_steps) pair.
     
     Args:
         model: The environment model
+        
+    Returns:
+        best_performance: Dictionary with best hyperparameters
     """
+    # Define the hyperparameter values to test
     alphas = [0.01, 0.1, 0.5]
     epsilons = [0.01, 0.1, 0.3]
+    num_episodes_values = [100, 500, 1000]
+    max_steps_values = [50, 200, 500]
     
-    fig, axes = plt.subplots(len(alphas), len(epsilons), figsize=(15, 10))
-    fig.suptitle("SARSA Hyperparameter Tuning: Impact of α and ε", fontsize=16)
+    # Initialize a 4D array to store results
+    # Dimensions: [num_episodes_idx, max_steps_idx, alpha_idx, epsilon_idx]
+    results = np.zeros((len(num_episodes_values), len(max_steps_values), len(alphas), len(epsilons)))
     
-    # Run SARSA with different hyperparameters
-    for i, alpha in enumerate(alphas):
-        for j, epsilon in enumerate(epsilons):
-            print(f"\nTesting SARSA with alpha={alpha}, epsilon={epsilon}")
+    # Track best performance for summary
+    best_performance = {
+        'alpha': None,
+        'epsilon': None,
+        'num_episodes': None,
+        'max_steps': None,
+        'return': -float('inf')
+    }
+    
+    # Systematically iterate over all hyperparameter combinations
+    for e_idx, num_episodes in enumerate(num_episodes_values):
+        for s_idx, max_steps in enumerate(max_steps_values):
+            for a_idx, alpha in enumerate(alphas):
+                for eps_idx, epsilon in enumerate(epsilons):
+                    # Print progress update
+                    print(f"\nTesting SARSA with α={alpha}, ε={epsilon}, " +
+                          f"episodes={num_episodes}, max_steps={max_steps}")
+                    
+                    # Create and train agent with this specific parameter combination
+                    agent = SarsaAgent(
+                        model=model,
+                        alpha=alpha,
+                        epsilon=epsilon
+                    )
+                    
+                    # Train with these parameters
+                    _, _, stats = agent.train(
+                        num_episodes=num_episodes,
+                        max_steps=max_steps,
+                        verbose=False
+                    )
+                    
+                    # Calculate final performance (average of last 50 episodes or 20% of episodes, whichever is smaller)
+                    final_window = min(50, max(10, int(num_episodes * 0.2)))
+                    final_return_avg = np.mean(stats['episode_returns'][-final_window:])
+                    
+                    # Store the result
+                    results[e_idx, s_idx, a_idx, eps_idx] = final_return_avg
+                    
+                    # Check if this is the best performance so far
+                    if final_return_avg > best_performance['return']:
+                        best_performance['alpha'] = alpha
+                        best_performance['epsilon'] = epsilon
+                        best_performance['num_episodes'] = num_episodes
+                        best_performance['max_steps'] = max_steps
+                        best_performance['return'] = final_return_avg
+    
+    # Create a figure with a grid of heatmaps
+    fig, axes = plt.subplots(3, 3, figsize=(18, 16))
+    fig.suptitle("SARSA Hyperparameter Tuning: Final Average Returns", fontsize=20)
+    
+    # Find global min and max for consistent color scaling across all heatmaps
+    vmin = np.min(results)
+    vmax = np.max(results)
+    
+    # Create heatmaps for each (num_episodes, max_steps) combination
+    for e_idx, num_episodes in enumerate(num_episodes_values):
+        for s_idx, max_steps in enumerate(max_steps_values):
+            # Get the current subplot
+            ax = axes[e_idx, s_idx]
             
-            # Create agent
-            agent = SarsaAgent(
-                model=model,
-                alpha=alpha,
-                epsilon=epsilon
+            # Create heatmap for this (num_episodes, max_steps) combination
+            heatmap_data = results[e_idx, s_idx]
+            
+            # Create heatmap with seaborn - no per-subplot color bars
+            sns.heatmap(
+                heatmap_data, 
+                annot=True, 
+                fmt=".2f", 
+                cmap="viridis",
+                vmin=vmin, 
+                vmax=vmax,
+                ax=ax,
+                xticklabels=epsilons,
+                yticklabels=alphas,
+                cbar=False  # No individual color bars
             )
             
-            # Train for fewer episodes to speed up demo
-            _, _, stats = agent.train(
-                num_episodes=200,
-                max_steps=500,
-                verbose=False
-            )
+            # Set title and labels
+            ax.set_title(f"Episodes={num_episodes}, Steps={max_steps}", fontsize=12)
+            ax.set_xlabel("Epsilon (ε)" if e_idx == 2 else "")  # Only add xlabel on bottom row
+            ax.set_ylabel("Alpha (α)" if s_idx == 0 else "")    # Only add ylabel on leftmost column
             
-            # Plot learning curve
-            ax = axes[i, j]
-            
-            # Smooth returns for better visualization
-            window_size = min(20, len(stats['episode_returns']))
-            smoothed_returns = np.convolve(
-                stats['episode_returns'], 
-                np.ones(window_size) / window_size, 
-                mode='valid'
-            )
-            
-            ax.plot(smoothed_returns)
-            ax.set_title(f"α={alpha}, ε={epsilon}")
-            
-            if i == len(alphas) - 1:
-                ax.set_xlabel("Episode")
-            if j == 0:
-                ax.set_ylabel("Smoothed Return")
+            # Mark the best parameter combination if it's in this heatmap
+            if (best_performance['num_episodes'] == num_episodes and 
+                best_performance['max_steps'] == max_steps):
+                best_a_idx = alphas.index(best_performance['alpha'])
+                best_eps_idx = epsilons.index(best_performance['epsilon'])
+                ax.add_patch(plt.Rectangle(
+                    (best_eps_idx, best_a_idx), 1, 1, 
+                    fill=False, edgecolor='red', linewidth=3, clip_on=False
+                ))
     
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig("sarsa_hyperparameter_tuning.png")
+    # Add a common colorbar for all heatmaps
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, cax=cbar_ax)
+    cbar.set_label('Final Average Return', rotation=270, labelpad=20)
     
-    # Discussion of results
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0, 0.9, 0.95])
+    
+    # Create results directory if it doesn't exist
+    results_dir = "/Users/marinafranca/Desktop/gridworld-rl/results"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Write best combination information to file instead of plotting it
+    results_file = os.path.join(results_dir, "sarsa_comparison_results.txt")
+    with open(results_file, 'a') as f:  # Append mode so we don't overwrite existing content
+        f.write("\n\n===== SARSA Hyperparameter Tuning Results =====\n")
+        f.write(f"Best parameter combination:\n")
+        f.write(f"  Learning rate (α): {best_performance['alpha']}\n")
+        f.write(f"  Exploration rate (ε): {best_performance['epsilon']}\n")
+        f.write(f"  Number of episodes: {best_performance['num_episodes']}\n")
+        f.write(f"  Maximum steps: {best_performance['max_steps']}\n")
+        f.write(f"  Average return: {best_performance['return']:.2f}\n")
+    
+    # Save the visualization
+    plt.savefig("sarsa_hyperparameter_heatmaps.png", dpi=300, bbox_inches='tight')
+    
+    # Print best hyperparameter combination to console
     print("\n===== Hyperparameter Tuning Results =====")
-    print("Learning rate (α):")
-    print("  Too small (0.01): Learning is very slow, requires many episodes to converge")
-    print("  Moderate (0.1): Good balance between learning speed and stability")
-    print("  Too large (0.5): Can cause oscillations or divergence in Q-values")
+    print(f"Best parameter combination:")
+    print(f"  Learning rate (α): {best_performance['alpha']}")
+    print(f"  Exploration rate (ε): {best_performance['epsilon']}")
+    print(f"  Number of episodes: {best_performance['num_episodes']}")
+    print(f"  Maximum steps: {best_performance['max_steps']}")
+    print(f"  Average return: {best_performance['return']:.2f}")
+    print(f"\nResults saved to: {results_file}")
     
-    print("\nExploration rate (ε):")
-    print("  Too small (0.01): May get stuck in suboptimal policies (not enough exploration)")
-    print("  Moderate (0.1): Good balance between exploration and exploitation")
-    print("  Too large (0.3): Too much random exploration, slower convergence to optimal policy")
-    
-    print("\nRecommended values:")
+    # General parameter guidance
+    print("\nGeneral parameter guidelines:")
     print("  α: Start around 0.1, potentially with decay over episodes")
-    print("  ε: Start around 0.1-0.2, with decay to ensure eventual convergence to deterministic policy")
+    print("  ε: Start around 0.1-0.2, with decay to ensure eventual convergence")
+    print("  Episodes: More is generally better, but diminishing returns after convergence")
+    print("  Max steps: Should be large enough to allow goal completion, but not wastefully large")
+    
+    return best_performance
 
 
 if __name__ == "__main__":
-    from world_config import small_world
-    from model import Model
+    from environment.world_config import small_world
+    from environment.model import Model
     
     # Create model
     model = Model(small_world)
@@ -673,18 +906,49 @@ if __name__ == "__main__":
     print(f"Size: {small_world.num_rows}x{small_world.num_cols}")
     print(f"Discount factor (gamma): {model.gamma}")
     
-    # Run hyperparameter tuning demo
-    hyperparameter_tuning_demo(model)
+    # Run hyperparameter tuning demo to find optimal parameters
+    print("\n===== Running Hyperparameter Tuning =====")
+    best_params = hyperparameter_tuning_demo(model)
     
-    # Run comparison with selected hyperparameters
-    print("\n===== Running SARSA and Expected SARSA with selected hyperparameters =====")
+    # Extract the optimal parameters
+    optimal_alpha = best_params['alpha']
+    optimal_epsilon = best_params['epsi lon']
+    optimal_episodes = best_params['num_episodes']
+    optimal_max_steps = best_params['max_steps']
+    
+    print(f"\n===== Using Optimal Hyperparameters from Tuning =====")
+    print(f"Learning rate (α): {optimal_alpha}")
+    print(f"Exploration rate (ε): {optimal_epsilon}")
+    print(f"Number of episodes: {optimal_episodes}")
+    print(f"Maximum steps: {optimal_max_steps}")
+    
+    # Run comparison with optimal hyperparameters
+    print("\n===== Running SARSA and Expected SARSA with Optimal Hyperparameters =====")
     results = run_sarsa_comparison(
         model=model,
-        num_episodes=500,  # More episodes for better convergence
-        max_steps=1000,
-        alpha=0.1,
-        epsilon=0.1,
-        epsilon_decay=0.001
+        num_episodes=optimal_episodes,
+        max_steps=optimal_max_steps,
+        alpha=optimal_alpha,
+        epsilon=optimal_epsilon,
+        epsilon_decay=0.001  # Keep epsilon decay - could make this tunable too if desired
     )
+    
+    # Create results directory if it doesn't exist
+    results_dir = "/Users/marinafranca/Desktop/gridworld-rl/results"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Save the optimal parameters to a separate file for reference
+    optimal_params_file = os.path.join(results_dir, "optimal_sarsa_parameters.txt")
+    with open(optimal_params_file, 'w') as f:
+        f.write("===== Optimal SARSA Parameters =====\n")
+        f.write(f"Learning rate (α): {optimal_alpha}\n")
+        f.write(f"Exploration rate (ε): {optimal_epsilon}\n")
+        f.write(f"Number of episodes: {optimal_episodes}\n")
+        f.write(f"Maximum steps: {optimal_max_steps}\n")
+        f.write(f"Average return: {best_params['return']:.2f}\n")
+        f.write("\nThese parameters were determined by a grid search over 81 combinations of hyperparameters.\n")
+        f.write("They were automatically applied to all subsequent SARSA and Expected SARSA experiments.\n")
+    
+    print(f"Optimal parameters saved to: {optimal_params_file}")
     
     plt.show() 
