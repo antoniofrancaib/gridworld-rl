@@ -1,0 +1,8 @@
+===== Q-learning Hyperparameter Tuning Results (γ=0.95) =====
+Best parameter combination:
+  γ=0.95
+  α=0.5
+  ε=0.01
+  Episodes=1000
+  Max steps=50
+  Return=-7.24

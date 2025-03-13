@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from environment.model import Model, Actions
 from utils.plot_vp import plot_vp
 from typing import List, Tuple, Dict, Optional, Callable
-from sarsa import SarsaAgent
+from algorithms.sarsa import SarsaAgent
 
 
 class QLearningAgent:

@@ -1,0 +1,47 @@
+
+Q-learning vs SARSA Comparison Summary
+=====================================
+
+Environment: Model - Small World
+Grid size: 4x4
+Discount factor (γ): 0.95
+
+Hyperparameters:
+- Learning rate (α): 0.5
+- Exploration rate (ε): 0.01
+- Number of episodes: 1000
+- Maximum steps per episode: Used in training but not tracked in stats
+
+Performance Metrics:
+- Training time:
+  * Q-learning: 0.68s
+  * SARSA: 0.67s
+  * Faster algorithm: SARSA (by 0.01s)
+
+- Average return (last 100 episodes):
+  * Q-learning: -7.80
+  * SARSA: -7.64
+  * Better algorithm: SARSA (by 0.16)
+
+- Average steps per episode (last 100 episodes):
+  * Q-learning: 7.80
+  * SARSA: 7.64
+  * More efficient algorithm: SARSA (by 0.16 steps)
+
+Policy Differences:
+- Number of states with different policies: 2 (11.76%)
+
+Analysis:
+- Convergence: SARSA converged faster
+- Final performance: SARSA achieved higher returns
+- Policy similarity: Moderate (88.24% of states have the same policy)
+
+Theoretical Explanation:
+Q-learning and SARSA differ in how they update their value estimates:
+- Q-learning (off-policy) updates based on the maximum Q-value of the next state
+- SARSA (on-policy) updates based on the actual next action chosen by the current policy
+
+This difference leads to:
+1. Q-learning tends to find more optimal policies faster but may be less stable
+2. SARSA tends to be more conservative in risky environments since it accounts for exploration during learning
+3. In environments with minimal risk or clear optimal paths, both algorithms often converge to similar policies

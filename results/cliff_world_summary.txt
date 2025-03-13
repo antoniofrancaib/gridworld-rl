@@ -4,17 +4,17 @@ Performance Metrics:
 Policy Iteration:
   - Iterations: 14
   - Bellman Updates: 9945
-  - Execution Time: 3.5885s
+  - Execution Time: 3.4668s
 
 Synchronous VI:
   - Iterations: 14
   - Bellman Updates: 714
-  - Execution Time: 0.4757s
+  - Execution Time: 0.4752s
 
 Asynchronous VI:
   - Iterations: 14
   - Bellman Updates: 714
-  - Execution Time: 0.4751s
+  - Execution Time: 0.4744s
 
 Policy Differences:
 Policy Iteration vs Synchronous VI: 0 states differ (0.00%)
